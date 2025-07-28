@@ -123,10 +123,7 @@
             resize: vertical;
             background-color: #f9fafb;
         }
-        .copy-button-container {
-            text-align: right;
-            margin-top: 1rem;
-        }
+        /* Removed .copy-button-container as it's no longer needed */
     </style>
 </head>
 <body>
@@ -146,9 +143,7 @@
 
         <div id="errorMessage" class="error-message"></div>
 
-        <div class="copy-button-container">
-            <button id="copyButton" class="btn hidden">Copy Data to Clipboard</button>
-        </div>
+        <!-- Removed the copy-button-container and the copy button -->
 
         <textarea id="outputData" readonly class="hidden"></textarea>
 
@@ -166,7 +161,7 @@
         const gamesContainer = document.getElementById('gamesContainer');
         const errorMessage = document.getElementById('errorMessage');
         const outputData = document.getElementById('outputData');
-        const copyButton = document.getElementById('copyButton');
+        // Removed const copyButton = document.getElementById('copyButton');
 
         // Base URLs for BoardGameGeek API
         const BGG_API_COLLECTION_URL = 'https://boardgamegeek.com/xmlapi2/collection';
@@ -216,7 +211,7 @@
             fetchButton.classList.add('opacity-70', 'cursor-not-allowed');
             gamesContainer.innerHTML = ''; // Clear previous results
             outputData.classList.add('hidden'); // Hide output area
-            copyButton.classList.add('hidden'); // Hide copy button
+            // Removed copyButton.classList.add('hidden'); // Hide copy button
             hideErrorMessage();
         }
 
@@ -436,16 +431,16 @@
             gamesContainer.innerHTML = ''; // Clear existing content
             outputData.value = ''; // Clear previous output
             outputData.classList.remove('hidden'); // Show output area
-            copyButton.classList.remove('hidden'); // Show copy button
+            // Removed copyButton.classList.remove('hidden'); // Hide copy button
 
             if (games.length === 0) {
                 gamesContainer.innerHTML = '<p class="text-center text-gray-500">No game descriptions to display.</p>';
                 outputData.classList.add('hidden');
-                copyButton.classList.add('hidden');
+                // Removed copyButton.classList.add('hidden');
                 return;
             }
 
-            // Create header row for TSV - "Date Added" column removed
+            // Create header row for TSV
             let tsvContent = `${escapeAndQuoteForTSV("Game Name")}\t${escapeAndQuoteForTSV("Description")}\t${escapeAndQuoteForTSV("Image URL")}\t${escapeAndQuoteForTSV("Category")}\t${escapeAndQuoteForTSV("Mechanism")}\t${escapeAndQuoteForTSV("Family")}\t${escapeAndQuoteForTSV("Designer")}\t${escapeAndQuoteForTSV("Artist")}\t${escapeAndQuoteForTSV("Publisher")}\n`;
 
             games.forEach(game => {
@@ -468,17 +463,14 @@
 
         /**
          * Copies the content of the outputData textarea to the clipboard.
+         * This function is no longer called by a button, but kept for reference if needed elsewhere.
          */
         function copyDataToClipboard() {
             outputData.select();
             outputData.setSelectionRange(0, 99999); // For mobile devices
             try {
                 document.execCommand('copy');
-                // You could add a temporary visual feedback here, e.g., a "Copied!" message
-                copyButton.textContent = 'Copied!';
-                setTimeout(() => {
-                    copyButton.textContent = 'Copy Data to Clipboard';
-                }, 2000);
+                // No visual feedback for button anymore
             } catch (err) {
                 console.error('Failed to copy text:', err);
                 showErrorMessage('Failed to copy data to clipboard. Please copy manually.');
@@ -499,21 +491,16 @@
             }
 
             try {
-                // fetchCollection now returns only IDs
                 const gameIds = await fetchCollection(username); 
-                // Introduce a delay after fetching collection before fetching details
                 if (gameIds.length > 0) {
                     await new Promise(resolve => setTimeout(resolve, API_CALL_DELAY)); 
-                    // fetchGameDetails now expects only IDs
                     const games = await fetchGameDetails(gameIds); 
                     displayGames(games);
                 } else {
-                    displayGames([]); // Display empty state if no games found or error occurred
+                    displayGames([]); 
                 }
             } catch (error) {
                 console.error('An unexpected error occurred in handleFetchCollection:', error);
-                // The specific error message should already be shown by fetchCollection/fetchGameDetails
-                // This catch is for any errors not caught within the individual fetch functions.
                 if (error.message === 'Failed to fetch') {
                     showErrorMessage('Network error: Could not connect to BoardGameGeek API. Please check your internet connection or try again later.');
                 } else if (!errorMessage.style.display || errorMessage.style.display === 'none') {
@@ -526,7 +513,7 @@
 
         // Add event listeners
         fetchButton.addEventListener('click', handleFetchCollection);
-        copyButton.addEventListener('click', copyDataToClipboard);
+        // Removed copyButton.addEventListener('click', copyDataToClipboard);
 
         // Add event listener for 'keydown' on the username input
         usernameInput.addEventListener('keydown', (event) => {
