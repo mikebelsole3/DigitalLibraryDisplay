@@ -82,25 +82,6 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .game-card {
-            background-color: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        }
-        .game-card h3 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #1f2937;
-            margin-bottom: 0.75rem;
-        }
-        .game-card p {
-            font-size: 1rem;
-            color: #4b5563;
-            line-height: 1.6;
-        }
         .error-message {
             color: #dc2626; /* Red */
             background-color: #fee2e2; /* Light red background */
@@ -123,17 +104,17 @@
             resize: vertical;
             background-color: #f9fafb;
         }
-        /* Removed .copy-button-container as it's no longer needed */
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="text-3xl font-extrabold text-center text-gray-900 mb-8">BoardGameGeek Collection Data Extractor</h1>
+        <p class="text-sm text-center text-gray-500 mb-4">Note: This version uses the provided Authorization Token.</p>
 
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
             <div class="input-group flex-grow w-full sm:w-auto">
                 <label for="usernameInput" class="block text-sm">BGG Username:</label>
-                <input type="text" id="usernameInput" value="mikewellplayed" placeholder="Enter BGG username" class="mt-1">
+                <input type="text" id="usernameInput" value="" placeholder="Enter BGG username" class="mt-1">
             </div>
             <button id="fetchButton" class="btn mt-4 sm:mt-0">
                 Fetch Collection
@@ -143,17 +124,24 @@
 
         <div id="errorMessage" class="error-message"></div>
 
-        <!-- Removed the copy-button-container and the copy button -->
-
         <textarea id="outputData" readonly class="hidden"></textarea>
 
         <div id="gamesContainer" class="mt-8">
-            <!-- Game descriptions will be loaded here, or a message if no data -->
             <p class="text-center text-gray-500">Enter a username and click "Fetch Collection" to see your games.</p>
         </div>
     </div>
 
     <script>
+        // --- AUTHORIZATION SETUP (User Requested) ---
+        // Token provided by the user and included in the HTTP Authorization header.
+        const AUTHORIZATION_TOKEN = "6a4d6168-5e9a-4f61-b87a-bca4b71bb3a9";
+        
+        // Headers object to include the Authorization token
+        const AUTH_HEADERS = {
+            'Authorization': `Bearer ${AUTHORIZATION_TOKEN}`,
+        };
+        // ---------------------------------------------
+
         // Get DOM elements
         const usernameInput = document.getElementById('usernameInput');
         const fetchButton = document.getElementById('fetchButton');
@@ -161,10 +149,9 @@
         const gamesContainer = document.getElementById('gamesContainer');
         const errorMessage = document.getElementById('errorMessage');
         const outputData = document.getElementById('outputData');
-        // Removed const copyButton = document.getElementById('copyButton');
 
         // Base URLs for BoardGameGeek API
-        const BGG_API_COLLECTION_URL = 'https://boardgamegeek.com/xmlapi2/collection';
+        const BGG_API_COLLECTION_URL = 'https://boardgamegeek.com/xmlapi2/collection'; 
         const BGG_API_THING_URL = 'https://boardgamegeek.com/xmlapi2/thing';
         
         // Recommended delay between API calls based on BGG API guide (5 seconds)
@@ -172,7 +159,6 @@
 
         /**
          * Encapsulates a string in double quotes and escapes internal double quotes.
-         * This is essential for CSV/TSV compatibility when fields contain delimiters or quotes.
          * @param {string} value - The string value to process.
          * @returns {string} The quoted and escaped string.
          */
@@ -180,9 +166,7 @@
             if (value === null || value === undefined) {
                 value = '';
             }
-            // Replace all double quotes with two double quotes
             const escapedValue = String(value).replace(/"/g, '""');
-            // Enclose the entire value in double quotes
             return `"${escapedValue}"`;
         }
 
@@ -209,9 +193,8 @@
             loadingSpinner.style.display = 'inline-block';
             fetchButton.disabled = true;
             fetchButton.classList.add('opacity-70', 'cursor-not-allowed');
-            gamesContainer.innerHTML = ''; // Clear previous results
-            outputData.classList.add('hidden'); // Hide output area
-            // Removed copyButton.classList.add('hidden'); // Hide copy button
+            gamesContainer.innerHTML = ''; 
+            outputData.classList.add('hidden'); 
             hideErrorMessage();
         }
 
@@ -225,40 +208,56 @@
         }
 
         /**
-         * Fetches the user's board game collection from BGG.
-         * Returns an array of objects, each containing game ID.
+         * Fetches the user's board game collection from BGG (single attempt).
          * @param {string} username - The BGG username.
          * @returns {Promise<Array<{id: string}>>} - A promise that resolves to an array of game IDs.
          */
         async function fetchCollection(username) {
             const url = `${BGG_API_COLLECTION_URL}?username=${username}&stats=0`; 
+            console.log('Fetching collection from URL:', url);
+            
             try {
-                const response = await fetch(url);
+                // Perform single fetch attempt with Auth Headers
+                const response = await fetch(url, { headers: AUTH_HEADERS });
                 const text = await response.text(); 
+                
+                if (response.status === 202) {
+                    showErrorMessage(`BGG API is busy. The request was queued (Status 202). Please wait 30 seconds and try again.`);
+                    return [];
+                }
 
                 if (!response.ok) {
                     console.error(`HTTP error fetching collection: Status ${response.status} - ${response.statusText}`);
-                    console.error('Raw response for collection:', text); 
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    
+                    if (response.status === 404) { 
+                        // --- USERNAME EXISTENCE CHECK ---
+                        showErrorMessage(`Error: BGG Username "${username}" does not exist, or the collection is private (Status 404).`);
+                    } else if (response.status === 401 || response.status === 403) {
+                        showErrorMessage(`Authorization failed (Status ${response.status}). Check your token or API permissions.`);
+                    } else {
+                        showErrorMessage(`BGG API server error (Status: ${response.status}). The server might be temporarily overloaded.`);
+                    }
+                    return [];
                 }
                 
+                // Successful response (200 OK)
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(text, "application/xml");
 
                 const errorElement = xmlDoc.querySelector('error');
                 if (errorElement) {
                     const errorMessageText = errorElement.textContent || 'Unknown API error.';
-                    console.error('BGG API error in collection:', errorMessageText);
-                    throw new Error(errorMessageText);
+                    showErrorMessage(`BGG API Error: ${errorMessageText}`);
+                    return [];
                 }
 
                 const items = xmlDoc.querySelectorAll('item');
                 if (items.length === 0) {
                     const collectionElement = xmlDoc.querySelector('items');
                     if (collectionElement && collectionElement.hasAttribute('totalitems') && collectionElement.getAttribute('totalitems') === '0') {
-                        showErrorMessage(`No games or expansions found in collection for username: "${username}". The collection might be empty.`);
+                        showErrorMessage(`The collection for "${username}" is empty.`);
                     } else {
-                        showErrorMessage(`No games or expansions found or collection is private for username: "${username}". Please check the username or ensure the collection is public.`);
+                        showErrorMessage(`No games or expansions found or collection is private for username: "${username}".`);
                     }
                     return [];
                 }
@@ -270,18 +269,18 @@
                         gameIds.push({ id: objectId }); // Only store ID
                     }
                 });
-                return gameIds;
+                return gameIds; 
+
             } catch (error) {
-                console.error('Error fetching collection:', error);
-                showErrorMessage(`Failed to fetch collection: ${error.message}. Please try again.`);
+                console.error('Network error during collection fetch:', error);
+                showErrorMessage(`A network error occurred (e.g., connection issue or timeout): ${error.message}.`);
                 return [];
             }
         }
 
         /**
-         * Fetches detailed information for a list of game IDs from BGG in chunks.
+         * Fetches detailed information for a list of game IDs from BGG in chunks (single attempt per chunk).
          * @param {Array<{id: string}>} gamesWithIds - An array of game objects with ID.
-         * @returns {Promise<Array<{id: string, name: string, description: string, imageUrl: string, categories: string, mechanisms: string, families: string, designers: string, artists: string, publishers: string}>>} - A promise that resolves to an array of game objects.
          */
         async function fetchGameDetails(gamesWithIds) {
             if (gamesWithIds.length === 0) {
@@ -289,134 +288,79 @@
             }
 
             const allGames = [];
-            const chunkSize = 20; // BGG API guide mentions max 20 game IDs per call for /xmlapi/boardgame
-            const maxRetries = 3; // Maximum number of retries for a failed chunk
-            const initialDelay = API_CALL_DELAY; // Use the recommended API call delay
-
+            const chunkSize = 20; 
+            
             for (let i = 0; i < gamesWithIds.length; i += chunkSize) {
                 const chunk = gamesWithIds.slice(i, i + chunkSize);
-                const idsString = chunk.map(game => game.id).join(','); // Extract IDs from the chunk
+                const idsString = chunk.map(game => game.id).join(','); 
                 const url = `${BGG_API_THING_URL}?id=${idsString}&stats=0&videos=0&marketplace=0&versions=0&comments=0&ratingcomments=0`;
+                console.log(`Fetching game details chunk ${Math.floor(i/chunkSize) + 1} from URL: ${url}`); 
                 
-                let attempts = 0;
-                let success = false;
+                try {
+                    // Perform single fetch attempt with Auth Headers
+                    const response = await fetch(url, { headers: AUTH_HEADERS });
+                    const text = await response.text();
 
-                while (attempts < maxRetries && !success) {
-                    try {
-                        const response = await fetch(url);
-                        const text = await response.text();
-
-                        if (!response.ok) {
-                            console.warn(`Attempt ${attempts + 1} failed for game details chunk (HTTP status ${response.status}). Retrying...`);
-                            console.error('Raw response for failed game details chunk:', text);
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-                        
-                        const parser = new DOMParser();
-                        const xmlDoc = parser.parseFromString(text, "application/xml");
-
-                        const items = xmlDoc.querySelectorAll('item');
-                        items.forEach(item => {
-                            const id = item.getAttribute('id');
-                            const bggItemType = item.getAttribute('type'); 
-                            const nameElement = item.querySelector('name[type="primary"]');
-                            const descriptionElement = item.querySelector('description');
-                            const imageElement = item.querySelector('image');
-
-                            // Filter to only include boardgames and boardgameexpansions
-                            if (bggItemType === 'boardgame' || bggItemType === 'boardgameexpansion') {
-                                const name = nameElement ? nameElement.getAttribute('value') : 'N/A';
-                                let description = descriptionElement ? descriptionElement.textContent : '';
-                                const imageUrl = imageElement ? imageElement.textContent : '';
-
-                                // Extract Categories
-                                let categories = [];
-                                item.querySelectorAll('link[type="boardgamecategory"]').forEach(link => {
-                                    categories.push(link.getAttribute('value'));
-                                });
-                                const uniqueCategories = [...new Set(categories)]; 
-                                const categoriesString = uniqueCategories.join(', '); 
-                                
-                                // Extract Mechanisms
-                                let mechanisms = [];
-                                item.querySelectorAll('link[type="boardgamemechanic"]').forEach(link => {
-                                    mechanisms.push(link.getAttribute('value'));
-                                });
-                                const uniqueMechanisms = [...new Set(mechanisms)];
-                                const mechanismsString = uniqueMechanisms.join(', ');
-
-                                // Extract Families, now only including "Organizations: Game Designers of North Carolina"
-                                const families = [];
-                                item.querySelectorAll('link[type="boardgamefamily"]').forEach(link => {
-                                    const familyValue = link.getAttribute('value');
-                                    if (familyValue === "Organizations: Game Designers of North Carolina") { 
-                                        families.push(familyValue);
-                                    }
-                                });
-                                const familiesString = families.join(', '); 
-
-                                // Extract Designers
-                                const designers = [];
-                                item.querySelectorAll('link[type="boardgamedesigner"]').forEach(link => {
-                                    designers.push(link.getAttribute('value'));
-                                });
-                                const designersString = [...new Set(designers)].join(', ');
-
-                                // Extract Artists
-                                const artists = [];
-                                item.querySelectorAll('link[type="boardgameartist"]').forEach(link => {
-                                    artists.push(link.getAttribute('value'));
-                                });
-                                const artistsString = [...new Set(artists)].join(', ');
-
-                                // Extract Publishers
-                                const publishers = [];
-                                item.querySelectorAll('link[type="boardgamepublisher"]').forEach(link => {
-                                    publishers.push(link.getAttribute('value'));
-                                });
-                                const publishersString = [...new Set(publishers)].join(', ');
-
-
-                                if (id && name !== 'N/A') { 
-                                    const textarea = document.createElement('textarea');
-                                    textarea.innerHTML = description;
-                                    description = textarea.value;
-                                    description = description.replace(/<[^>]*>/g, '');
-                                    description = description.replace(/\s*\n\s*/g, ' ').trim();
-
-                                    allGames.push({ 
-                                        id, 
-                                        name, 
-                                        description, 
-                                        imageUrl, 
-                                        categories: categoriesString, 
-                                        mechanisms: mechanismsString, 
-                                        families: familiesString,
-                                        designers: designersString, 
-                                        artists: artistsString,     
-                                        publishers: publishersString
-                                    });
-                                } else {
-                                    console.warn(`Skipping item with ID ${id} due to missing primary name or ID.`);
-                                }
-                            }
-                        });
-                        success = true; // Mark as success, exit retry loop
-                    } catch (error) {
-                        attempts++;
-                        console.error(`Error fetching game details chunk (attempt ${attempts}):`, error);
-                        if (attempts < maxRetries) {
-                            const delay = initialDelay * Math.pow(2, attempts - 1); // Exponential backoff
-                            console.log(`Retrying in ${delay}ms...`);
-                            await new Promise(resolve => setTimeout(resolve, delay));
-                        } else {
-                            showErrorMessage(`Failed to fetch details for some games after multiple retries: ${error.message}.`);
-                        }
+                    if (!response.ok) {
+                        console.error(`Failed to fetch game details chunk (HTTP status ${response.status}). Skipping this chunk.`);
+                        continue; // Skip this chunk and move to the next iteration
                     }
+                    
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(text, "application/xml");
+
+                    const items = xmlDoc.querySelectorAll('item');
+                    items.forEach(item => {
+                        const id = item.getAttribute('id');
+                        const bggItemType = item.getAttribute('type'); 
+                        const nameElement = item.querySelector('name[type="primary"]');
+                        const descriptionElement = item.querySelector('description');
+                        const imageElement = item.querySelector('image');
+
+                        if (bggItemType === 'boardgame' || bggItemType === 'boardgameexpansion') {
+                            const name = nameElement ? nameElement.getAttribute('value') : 'N/A';
+                            let description = descriptionElement ? descriptionElement.textContent : '';
+                            const imageUrl = imageElement ? imageElement.textContent : '';
+
+                            // Extracing and joining all relevant links/attributes
+                            const extractLinks = (type) => [...item.querySelectorAll(`link[type="${type}"]`)].map(link => link.getAttribute('value')).join(', ');
+                            
+                            const categoriesString = extractLinks('boardgamecategory'); 
+                            const mechanismsString = extractLinks('boardgamemechanic'); 
+                            const designersString = extractLinks('boardgamedesigner');
+                            const artistsString = extractLinks('boardgameartist');     
+                            const publishersString = extractLinks('boardgamepublisher');
+                            
+                            // Specific families extraction logic (retained)
+                            const families = [];
+                            item.querySelectorAll('link[type="boardgamefamily"]').forEach(link => {
+                                families.push(link.getAttribute('value'));
+                            });
+                            const familiesString = families.join(', ');
+
+
+                            if (id && name !== 'N/A') { 
+                                // Clean description (remove HTML tags and extra whitespace)
+                                const textarea = document.createElement('textarea');
+                                textarea.innerHTML = description;
+                                description = textarea.value;
+                                description = description.replace(/<[^>]*>/g, '').replace(/\s*\n\s*/g, ' ').trim();
+
+                                allGames.push({ 
+                                    id, name, description, imageUrl, categories: categoriesString, mechanisms: mechanismsString, 
+                                    families: familiesString, designers: designersString, artists: artistsString, publishers: publishersString
+                                });
+                            }
+                        }
+                    });
+
+                } catch (error) {
+                    console.error(`Network or parsing error for game details chunk:`, error);
+                    continue; // Move to the next chunk
                 }
 
-                // Always add the recommended delay between API calls, even on success
-                if (success && (i + chunkSize) < gamesWithIds.length) { // Only delay if there are more chunks to fetch
+                // Delay between chunks is kept to respect BGG API rate limits
+                if ((i + chunkSize) < gamesWithIds.length) { 
                     await new Promise(resolve => setTimeout(resolve, API_CALL_DELAY)); 
                 }
             }
@@ -424,19 +368,16 @@
         }
 
         /**
-         * Displays the fetched board game information in a copy-paste friendly format.
-         * @param {Array<{id: string, name: string, description: string, imageUrl: string, categories: string, mechanisms: string, families: string, designers: string, artists: string, publishers: string}>} games - An array of game objects.
+         * Displays the fetched board game information in a copy-paste friendly TSV format.
          */
         function displayGames(games) {
-            gamesContainer.innerHTML = ''; // Clear existing content
-            outputData.value = ''; // Clear previous output
-            outputData.classList.remove('hidden'); // Show output area
-            // Removed copyButton.classList.remove('hidden'); // Hide copy button
+            gamesContainer.innerHTML = ''; 
+            outputData.value = ''; 
+            outputData.classList.remove('hidden'); 
 
             if (games.length === 0) {
-                gamesContainer.innerHTML = '<p class="text-center text-gray-500">No game descriptions to display.</p>';
+                gamesContainer.innerHTML = '<p class="text-center text-gray-500">No game data was returned.</p>';
                 outputData.classList.add('hidden');
-                // Removed copyButton.classList.add('hidden');
                 return;
             }
 
@@ -444,7 +385,6 @@
             let tsvContent = `${escapeAndQuoteForTSV("Game Name")}\t${escapeAndQuoteForTSV("Description")}\t${escapeAndQuoteForTSV("Image URL")}\t${escapeAndQuoteForTSV("Category")}\t${escapeAndQuoteForTSV("Mechanism")}\t${escapeAndQuoteForTSV("Family")}\t${escapeAndQuoteForTSV("Designer")}\t${escapeAndQuoteForTSV("Artist")}\t${escapeAndQuoteForTSV("Publisher")}\n`;
 
             games.forEach(game => {
-                // Use the new escapeAndQuoteForTSV function for each field
                 const gameName = escapeAndQuoteForTSV(game.name);
                 const description = escapeAndQuoteForTSV(game.description);
                 const imageUrl = escapeAndQuoteForTSV(game.imageUrl);
@@ -462,22 +402,6 @@
         }
 
         /**
-         * Copies the content of the outputData textarea to the clipboard.
-         * This function is no longer called by a button, but kept for reference if needed elsewhere.
-         */
-        function copyDataToClipboard() {
-            outputData.select();
-            outputData.setSelectionRange(0, 99999); // For mobile devices
-            try {
-                document.execCommand('copy');
-                // No visual feedback for button anymore
-            } catch (err) {
-                console.error('Failed to copy text:', err);
-                showErrorMessage('Failed to copy data to clipboard. Please copy manually.');
-            }
-        }
-
-        /**
          * Main function to handle the fetch process.
          */
         async function handleFetchCollection() {
@@ -491,8 +415,11 @@
             }
 
             try {
+                // Single attempt to fetch collection
                 const gameIds = await fetchCollection(username); 
+                
                 if (gameIds.length > 0) {
+                    // Always pause between collection and details fetch
                     await new Promise(resolve => setTimeout(resolve, API_CALL_DELAY)); 
                     const games = await fetchGameDetails(gameIds); 
                     displayGames(games);
@@ -500,11 +427,10 @@
                     displayGames([]); 
                 }
             } catch (error) {
-                console.error('An unexpected error occurred in handleFetchCollection:', error);
-                if (error.message === 'Failed to fetch') {
-                    showErrorMessage('Network error: Could not connect to BoardGameGeek API. Please check your internet connection or try again later.');
-                } else if (!errorMessage.style.display || errorMessage.style.display === 'none') {
-                    showErrorMessage(`An unexpected error occurred: ${error.message}`);
+                console.error('An unhandled critical error occurred:', error);
+                
+                if (!errorMessage.style.display || errorMessage.style.display === 'none') {
+                    showErrorMessage(`A critical error occurred: ${error.message}`);
                 }
             } finally {
                 hideLoading();
@@ -513,20 +439,14 @@
 
         // Add event listeners
         fetchButton.addEventListener('click', handleFetchCollection);
-        // Removed copyButton.addEventListener('click', copyDataToClipboard);
 
         // Add event listener for 'keydown' on the username input
         usernameInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
-                event.preventDefault(); // Prevent default form submission
+                event.preventDefault(); 
                 handleFetchCollection();
             }
         });
-
-        // Optional: Trigger fetch on page load for the default username
-        // window.onload = () => {
-        //     handleFetchCollection();
-        // };
 
     </script>
 </body>
